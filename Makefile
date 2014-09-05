@@ -1,9 +1,11 @@
 all: clean
-	echo ${PWD}
-	./make_installer.sh
+	./make_installer.py scipy-stack 1.0 numpy scipy matplotlib ipython[notebook]
 
 clean:
-	rm -rf pip wheels pkg_template scipy-stack.pkg scripts
+	rm -rf pip wheels pkg_template scipy-stack.pkg scripts dmg_root *.dmg
 
 install:
-	sudo installer -pkg scipy-stack.pkg -verbose -target /
+	hdiutil attach scipy-stack-py27-1.0.dmg
+	sudo installer -pkg /Volumes/scipy-stack-py27-1.0/scipy-stack-1.0.pkg \
+	    -verbose -target /
+	hdiutil detach /Volumes/scipy-stack-py27-1.0
