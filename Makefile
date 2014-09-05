@@ -1,5 +1,6 @@
 all: clean
-	./make_installer.py scipy-stack 1.0 numpy scipy matplotlib ipython[notebook]
+	./make_installer.py scipy-stack 1.0 numpy scipy matplotlib ipython[notebook] \
+	    --get-pip-path=archives/get-pip.py
 
 clean:
 	rm -rf pip wheels pkg_template scipy-stack.pkg scripts dmg_root *.dmg

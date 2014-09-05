@@ -19,6 +19,10 @@ from os.path import exists, join as pjoin
 import shutil
 from subprocess import check_call
 from argparse import ArgumentParser, RawDescriptionHelpFormatter
+try:
+    from urllib2 import urlopen, URLError # Python 2
+except ImportError:
+    from urllib.request import urlopen, URLError # Python 3
 
 # Defaults
 PYTHON_VERSION='2.7'
@@ -32,6 +36,8 @@ DMG_DIR='dmg_root'
 PKG_DIR = 'packages'
 # Package directory within dmg_directory
 DMG_PKG_DIR = DMG_DIR + '/' + PKG_DIR
+# get-pip.py URL
+GET_PIP_URL = 'https://bootstrap.pypa.io/get-pip.py'
 
 
 def rm_mk_dir(dirname):
@@ -54,11 +60,17 @@ def get_pip_params(args):
     return params
 
 
-def get_pippers(pip_params):
+def get_pippers(pip_params, get_pip_path=None):
     pip_cmd = ['pip', 'install',
                '--download', DMG_PKG_DIR,
                'pip', 'setuptools'] + pip_params
     check_call(pip_cmd)
+    if not get_pip_path is None:
+        shutil.copy2(get_pip_path, DMG_PKG_DIR)
+        return
+    url_obj = urlopen(GET_PIP_URL)
+    with open(DMG_PKG_DIR + '/get-pip.py', 'wt') as fobj:
+        fobj.write(url_obj.read())
 
 
 def get_wheels(version, requirements, pip_params):
@@ -78,31 +90,10 @@ def write_post(py_version, requirements):
         fobj.write(
 r"""#!/usr/bin/env python
 # Install into Python.org python
-import os
-from os.path import exists, dirname, basename
 import sys
-import shutil
-from glob import glob
+import os
+from os.path import exists, dirname
 from subprocess import check_call
-
-def install_pkg_here(globber, python_cmd):
-    pkgs = glob(globber)
-    if len(pkgs) != 1:
-        raise RuntimeError('No packages match ' + globber)
-    pkg = pkgs[0]
-    pkg_base = basename(pkg)
-    shutil.copy2(pkg, '.')
-    if pkg.endswith('.zip'):
-        check_call(['unzip', pkg])
-        pkg_out_dir = pkg_base[:-4]
-    else:
-        assert pkg.endswith('.tar.gz')
-        check_call(['tar', '-xf', pkg])
-        pkg_out_dir = pkg_base[:-7]
-    os.chdir(pkg_out_dir)
-    check_call([python_cmd, 'setup.py', 'install'])
-    os.chdir('..')
-
 
 # Find disk image files
 package_path = os.environ.get('PACKAGE_PATH')
@@ -115,15 +106,16 @@ python_bin = '{py_org_base}/{py_version}/bin'
 python_path = python_bin +  '/python{py_version}'
 if not exists(python_path):
     sys.exit(20)
-# Install setuptools and pip
-install_pkg_here(wheelhouse + '/setuptools-*', python_path)
-install_pkg_here(wheelhouse + '/pip-*', python_path)
+# Install pip
+check_call([python_path, wheelhouse + '/get-pip.py', '-f', wheelhouse,
+            '--no-setuptools'])
 # Find pip
 expected_pip = python_bin + '/pip{py_version}'
 if not exists(expected_pip):
     sys.exit(30)
 pip_cmd = [expected_pip, 'install', '--no-index', '--upgrade',
            '--find-links', wheelhouse]
+check_call(pip_cmd + ['setuptools'])
 check_call(pip_cmd + [{to_install}])
 """.format(py_org_base = PY_ORG_BASE,
            py_version = py_version,
@@ -163,13 +155,15 @@ def main():
     parser.add_argument('--no-index',  action='store_true',
                         help='disable search of pip indices when fetching '
                         'packages to make installer')
-    parser.add_argument('--find-links', type=str, nargs='*', default=[],
+    parser.add_argument('--find-links', '-f', type=str, nargs='*', default=[],
                         help='locations to find packages to make installer')
+    parser.add_argument('--get-pip-path', type=str,
+                        help='local path to "get-pip.py"')
     # parse the command line
     args = parser.parse_args()
     pip_params = get_pip_params(args)
     mkdirs()
-    get_pippers(pip_params)
+    get_pippers(pip_params, args.get_pip_path)
     get_wheels(args.python_version, args.requirements, pip_params)
     write_post(args.python_version, args.requirements)
     write_pkg(args.pkg_name, args.pkg_version)
